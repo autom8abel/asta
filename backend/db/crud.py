@@ -32,3 +32,17 @@ def get_tasks(db: Session, skip: int = 0, limit: int = 10):
 
 def get_tasks_for_user(db: Session, user_id: int, skip: int = 0, limit: int = 100):
     return db.query(models.Task).filter(models.Task.user_id == user_id).offset(skip).limit(limit).all()
+
+# ---------- Logs ----------
+def create_log(db: Session, user_id: int, event_type: str, content: str):
+    log = models.Log(user_id=user_id, event_type=event_type, content=content)
+    db.add(log)
+    db.commit()
+    db.refresh(log)
+    return log
+
+def get_logs(db: Session, skip: int = 0, limit: int = 100):
+    return db.query(models.Log).offset(skip).limit(limit).all()
+
+def get_logs_for_user(db: Session, user_id: int, skip: int = 0, limit: int = 100):
+    return db.query(models.Log).filter(models.Log.user_id == user_id).offset(skip).limit(limit).all()

@@ -9,6 +9,7 @@ app = FastAPI()
 def root():
     return {"message": "Hello from ASTA MVP"}
 
+
 # ---------------- User endpoints ----------------
 @app.post("/users/", response_model=schemas.User)
 def create_user(user: schemas.UserCreate, db: Session = Depends(session.get_db)):
@@ -29,13 +30,28 @@ def read_user(user_id: int, db: Session = Depends(session.get_db)):
 def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(session.get_db)):
     return crud.get_users(db, skip=skip, limit=limit)
 
+
 # ---------------- Task endpoints ----------------
 @app.post("/tasks/", response_model=schemas.Task)
 def create_task(task: schemas.TaskCreate, db: Session = Depends(session.get_db)):
-    # If an owner is specified, ensure the user exists
     if task.user_id is not None and not crud.get_user(db, task.user_id):
         raise HTTPException(status_code=404, detail="User not found")
-    return crud.create_task(db=db, title=task.title, description=task.description, due_date=task.due_date, user_id=task.user_id)
+    db_task = crud.create_task(
+        db=db,
+        title=task.title,
+        description=task.description,
+        due_date=task.due_date,
+        user_id=task.user_id
+    )
+    # Automatically log the task creation
+    if task.user_id:
+        crud.create_log(
+            db=db,
+            user_id=task.user_id,
+            event_type="task_created",
+            content=f"Task '{task.title}' created"
+        )
+    return db_task
 
 @app.get("/tasks/", response_model=list[schemas.Task])
 def read_tasks(skip: int = 0, limit: int = 10, db: Session = Depends(session.get_db)):
@@ -46,3 +62,22 @@ def read_user_tasks(user_id: int, skip: int = 0, limit: int = 100, db: Session =
     if not crud.get_user(db, user_id):
         raise HTTPException(status_code=404, detail="User not found")
     return crud.get_tasks_for_user(db=db, user_id=user_id, skip=skip, limit=limit)
+
+
+# ---------------- Log endpoints ----------------
+@app.post("/logs/", response_model=schemas.Log)
+def create_log(log: schemas.LogCreate, db: Session = Depends(session.get_db)):
+    # Ensure user exists before logging
+    if not crud.get_user(db, log.user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    return crud.create_log(db=db, user_id=log.user_id, event_type=log.event_type, content=log.content)
+
+@app.get("/logs/", response_model=list[schemas.Log])
+def read_logs(skip: int = 0, limit: int = 100, db: Session = Depends(session.get_db)):
+    return crud.get_logs(db, skip=skip, limit=limit)
+
+@app.get("/users/{user_id}/logs", response_model=list[schemas.Log])
+def read_user_logs(user_id: int, skip: int = 0, limit: int = 100, db: Session = Depends(session.get_db)):
+    if not crud.get_user(db, user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+    return crud.get_logs_for_user(db=db, user_id=user_id, skip=skip, limit=limit)

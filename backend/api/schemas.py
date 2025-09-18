@@ -32,3 +32,20 @@ class User(UserBase):
 
     class Config:
         orm_mode = True
+
+# Log schemas
+class LogBase(BaseModel):
+    event_type: str
+    content: str
+
+class LogCreate(LogBase):
+    user_id: int
+
+class Log(LogBase):
+    id: int
+    user_id: int
+    timestamp: datetime
+
+    class Config:
+        orm_mode = True
+
