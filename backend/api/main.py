@@ -2,6 +2,7 @@ from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from backend.db import crud, session
 from backend.api import schemas
+from backend.nlp import nlp_processor
 
 app = FastAPI()
 
@@ -81,3 +82,103 @@ def read_user_logs(user_id: int, skip: int = 0, limit: int = 100, db: Session = 
     if not crud.get_user(db, user_id):
         raise HTTPException(status_code=404, detail="User not found")
     return crud.get_logs_for_user(db=db, user_id=user_id, skip=skip, limit=limit)
+
+# ---------- NLP Endpoints ----------
+@app.post("/nlp/parse", response_model=schemas.NLPParseOutput)
+def parse_text(input_data: schemas.NLPInput):
+    result = nlp_processor.parse_input(input_data.text)
+    return schemas.NLPParseOutput(intent=result["intent"], entities=result["entities"])
+
+@app.post("/nlp/act", response_model=schemas.NLPActOutput)
+def act_on_text(input_data: schemas.NLPInput, db: Session = Depends(session.get_db)):
+    # Ensure user exists
+    if input_data.user_id and not crud.get_user(db, input_data.user_id):
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # Run NLP processor
+    result = nlp_processor.parse_input(input_data.text)
+    intent, entities = result["intent"], result["entities"]
+
+    action = None
+    created_task = None
+    retrieved_tasks = None
+    deleted_task_id = None
+    message = None
+
+    # Handle intents
+    if intent == "create_task":
+        # Extract title from text
+        title = input_data.text
+        for v in entities.values():
+            title = title.replace(v, "")
+        title = title.replace("remind me", "").strip()
+
+        created_task = crud.create_task(
+            db=db,
+            title=title or "Untitled Task",
+            description=None,
+            due_date=None,  # TODO: convert DATE/TIME into datetime in Day 8
+            user_id=input_data.user_id
+        )
+        action = "task_created"
+
+        log = crud.create_log(
+            db=db,
+            user_id=input_data.user_id,
+            event_type="task_created",
+            content=f"Task '{created_task.title}' created"
+        )
+
+    elif intent == "get_tasks":
+        retrieved_tasks = crud.get_tasks(db=db, skip=0, limit=100)
+        action = "tasks_retrieved"
+
+        log = crud.create_log(
+            db=db,
+            user_id=input_data.user_id,
+            event_type="conversation",
+            content=f"User requested tasks"
+        )
+
+    elif intent == "delete_task":
+        import re
+        match = re.search(r"\d+", input_data.text)
+        if match:
+            task_id = int(match.group())
+            db_task = crud.get_task(db=db, task_id=task_id)
+            if db_task:
+                crud.delete_task(db=db, task_id=task_id)
+                deleted_task_id = task_id
+                action = "task_deleted"
+
+                log = crud.create_log(
+                    db=db,
+                    user_id=input_data.user_id,
+                    event_type="task_deleted",
+                    content=f"Task with ID {task_id} deleted"
+                )
+            else:
+                raise HTTPException(status_code=404, detail="Task not found")
+        else:
+            raise HTTPException(status_code=400, detail="No task ID found in text")
+
+    else:
+        action = "no_crud"
+        message = "This input was logged as a conversation but did not trigger an action."
+        log = crud.create_log(
+            db=db,
+            user_id=input_data.user_id,
+            event_type="conversation",
+            content=f"User said: {input_data.text}"
+        )
+
+    return schemas.NLPActOutput(
+        intent=intent,
+        entities=entities,
+        action=action,
+        task=created_task,
+        tasks=retrieved_tasks,
+        task_id=deleted_task_id,
+        message=message,
+        log=log   # ✅ directly return the log we just created
+    )
