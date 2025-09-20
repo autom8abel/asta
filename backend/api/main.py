@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from backend.db import crud, session
 from backend.api import schemas
 from backend.nlp import nlp_processor
+from backend.utils.date_utils import parse_due_date
 
 app = FastAPI()
 
@@ -84,13 +85,23 @@ def read_user_logs(user_id: int, skip: int = 0, limit: int = 100, db: Session = 
     return crud.get_logs_for_user(db=db, user_id=user_id, skip=skip, limit=limit)
 
 # ---------- NLP Endpoints ----------
+
 @app.post("/nlp/parse", response_model=schemas.NLPParseOutput)
 def parse_text(input_data: schemas.NLPInput):
+    """
+    Debug endpoint: Returns intent + entities from user input
+    without performing any action.
+    """
     result = nlp_processor.parse_input(input_data.text)
     return schemas.NLPParseOutput(intent=result["intent"], entities=result["entities"])
 
+
 @app.post("/nlp/act", response_model=schemas.NLPActOutput)
 def act_on_text(input_data: schemas.NLPInput, db: Session = Depends(session.get_db)):
+    """
+    Main NLP endpoint: interprets user input, performs CRUD if needed,
+    and always logs the interaction.
+    """
     # Ensure user exists
     if input_data.user_id and not crud.get_user(db, input_data.user_id):
         raise HTTPException(status_code=404, detail="User not found")
@@ -104,29 +115,39 @@ def act_on_text(input_data: schemas.NLPInput, db: Session = Depends(session.get_
     retrieved_tasks = None
     deleted_task_id = None
     message = None
+    log = None
 
     # Handle intents
     if intent == "create_task":
-        # Extract title from text
+        # Extract title (remove detected entities + filler words)
         title = input_data.text
         for v in entities.values():
             title = title.replace(v, "")
         title = title.replace("remind me", "").strip()
 
+        # Parse due_date using dateparser
+        due_date = parse_due_date(entities)
+
         created_task = crud.create_task(
             db=db,
             title=title or "Untitled Task",
             description=None,
-            due_date=None,  # TODO: convert DATE/TIME into datetime in Day 8
+            due_date=due_date,  # now stores datetime if available
             user_id=input_data.user_id
         )
         action = "task_created"
+
+        log_content = f"Task '{created_task.title}' created"
+        if due_date:
+            log_content += f" with due date {due_date}"
+        else:
+            log_content += " (no due date parsed)"
 
         log = crud.create_log(
             db=db,
             user_id=input_data.user_id,
             event_type="task_created",
-            content=f"Task '{created_task.title}' created"
+            content=log_content
         )
 
     elif intent == "get_tasks":
@@ -180,5 +201,5 @@ def act_on_text(input_data: schemas.NLPInput, db: Session = Depends(session.get_
         tasks=retrieved_tasks,
         task_id=deleted_task_id,
         message=message,
-        log=log   # ✅ directly return the log we just created
+        log=log
     )
