@@ -27,11 +27,21 @@ def create_task(db: Session, title: str, description: str = None, due_date=None,
     db.refresh(task)
     return task
 
+def get_task(db: Session, task_id: int):
+    return db.query(models.Task).filter(models.Task.id == task_id).first()
+
 def get_tasks(db: Session, skip: int = 0, limit: int = 10):
     return db.query(models.Task).offset(skip).limit(limit).all()
 
 def get_tasks_for_user(db: Session, user_id: int, skip: int = 0, limit: int = 100):
     return db.query(models.Task).filter(models.Task.user_id == user_id).offset(skip).limit(limit).all()
+
+def delete_task(db: Session, task_id: int):
+    task = db.query(models.Task).filter(models.Task.id == task_id).first()
+    if task:
+        db.delete(task)
+        db.commit()
+    return task
 
 # ---------- Logs ----------
 def create_log(db: Session, user_id: int, event_type: str, content: str):
