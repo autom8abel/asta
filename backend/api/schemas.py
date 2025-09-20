@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, validator
 from datetime import datetime
 from typing import Dict, Optional, List
 
@@ -51,7 +51,7 @@ class Log(LogBase):
 
 # NLP schemas
 class NLPInput(BaseModel):
-    text: str
+    text: str = Field(..., min_length=2, description="User input must not be empty")
     user_id: Optional[int] = None  # For /nlp/act
 
 class NLPParseOutput(BaseModel):
@@ -66,7 +66,7 @@ class NLPActOutput(BaseModel):
     tasks: Optional[List["Task"]] = None
     task_id: Optional[int] = None
     message: Optional[str] = None
-    log: Log
+    log: Optional["Log"] = None
 
     class Config:
         from_attributes = True
