@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, List
+from typing import Dict, Optional, List
 
 # Task schemas
 class TaskBase(BaseModel):
@@ -17,7 +17,7 @@ class Task(TaskBase):
     user_id: Optional[int] = None
 
     class Config:
-        orm_mode = True  # allow returning ORM objects directly
+        from_attributes = True # replaces orm_mode in Pydantic v2
 
 # User schemas
 class UserBase(BaseModel):
@@ -47,5 +47,26 @@ class Log(LogBase):
     timestamp: datetime
 
     class Config:
-        orm_mode = True
+        from_attributes = True # make Pydantic accept ORM objects
 
+# NLP schemas
+class NLPInput(BaseModel):
+    text: str
+    user_id: Optional[int] = None  # For /nlp/act
+
+class NLPParseOutput(BaseModel):
+    intent: str
+    entities: Dict[str, str]
+
+class NLPActOutput(BaseModel):
+    intent: str
+    entities: Dict[str, str]
+    action: str
+    task: Optional["Task"] = None
+    tasks: Optional[List["Task"]] = None
+    task_id: Optional[int] = None
+    message: Optional[str] = None
+    log: Log
+
+    class Config:
+        from_attributes = True
