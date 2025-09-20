@@ -118,85 +118,109 @@ def act_on_text(input_data: schemas.NLPInput, db: Session = Depends(session.get_
     log = None
 
     # Handle intents
-    if intent == "create_task":
-        # Extract title (remove detected entities + filler words)
-        title = input_data.text
-        for v in entities.values():
-            title = title.replace(v, "")
-        title = title.replace("remind me", "").strip()
+    try:
+        if intent == "create_task":
+            # Extract title (remove detected entities + filler words)
+            title = input_data.text
+            for v in entities.values():
+                title = title.replace(v, "")
+            title = title.replace("remind me", "").strip()
 
-        # Parse due_date using dateparser
-        due_date = parse_due_date(entities)
+            # Parse due_date using dateparser
+            due_date = parse_due_date(entities)
 
-        created_task = crud.create_task(
-            db=db,
-            title=title or "Untitled Task",
-            description=None,
-            due_date=due_date,  # now stores datetime if available
-            user_id=input_data.user_id
-        )
-        action = "task_created"
+            created_task = crud.create_task(
+                db=db,
+                title=title or "Untitled Task",
+                description=None,
+                due_date=due_date,  # now stores datetime if available
+                user_id=input_data.user_id
+            )
+            action = "task_created"
 
-        log_content = f"Task '{created_task.title}' created"
-        if due_date:
-            log_content += f" with due date {due_date}"
-        else:
-            log_content += " (no due date parsed)"
-
-        log = crud.create_log(
-            db=db,
-            user_id=input_data.user_id,
-            event_type="task_created",
-            content=log_content
-        )
-
-    elif intent == "get_tasks":
-        retrieved_tasks = crud.get_tasks(db=db, skip=0, limit=100)
-        action = "tasks_retrieved"
-
-        log = crud.create_log(
-            db=db,
-            user_id=input_data.user_id,
-            event_type="conversation",
-            content=f"User requested tasks"
-        )
-
-    elif intent == "delete_task":
-        import re
-        match = re.search(r"\d+", input_data.text)
-        if match:
-            task_id = int(match.group())
-            db_task = crud.get_task(db=db, task_id=task_id)
-            if db_task:
-                crud.delete_task(db=db, task_id=task_id)
-                deleted_task_id = task_id
-                action = "task_deleted"
-
-                log = crud.create_log(
-                    db=db,
-                    user_id=input_data.user_id,
-                    event_type="task_deleted",
-                    content=f"Task with ID {task_id} deleted"
-                )
+            log_content = f"Task '{created_task.title}' created"
+            if due_date:
+                log_content += f" with due date {due_date}"
             else:
-                raise HTTPException(status_code=404, detail="Task not found")
-        else:
-            raise HTTPException(status_code=400, detail="No task ID found in text")
+                log_content += " (no due date parsed)"
 
-    else:
-        action = "no_crud"
-        message = "This input was logged as a conversation but did not trigger an action."
-        log = crud.create_log(
-            db=db,
-            user_id=input_data.user_id,
-            event_type="conversation",
-            content=f"User said: {input_data.text}"
-        )
+            log = crud.create_log(
+                db=db,
+                user_id=input_data.user_id,
+                event_type="task_created",
+                content=log_content
+            )
+
+        elif intent == "get_tasks":
+            retrieved_tasks = crud.get_tasks(db=db, skip=0, limit=100)
+            action = "tasks_retrieved"
+
+            log = crud.create_log(
+                db=db,
+                user_id=input_data.user_id,
+                event_type="conversation",
+                content="User requested tasks"
+            )
+
+        elif intent == "delete_task":
+            import re
+            match = re.search(r"\d+", input_data.text)
+            if match:
+                task_id = int(match.group())
+                db_task = crud.get_task(db=db, task_id=task_id)
+                if db_task:
+                    crud.delete_task(db=db, task_id=task_id)
+                    deleted_task_id = task_id
+                    action = "task_deleted"
+
+                    log = crud.create_log(
+                        db=db,
+                        user_id=input_data.user_id,
+                        event_type="task_deleted",
+                        content=f"Task with ID {task_id} deleted"
+                    )
+                else:
+                    log = crud.create_log(
+                        db=db,
+                        user_id=input_data.user_id,
+                        event_type="error",
+                        content=f"Attempted to delete non-existent task ID {task_id}"
+                    )
+                    raise HTTPException(status_code=404, detail="Task not found")
+            else:
+                 log = crud.create_log(
+                     db=db,
+                     user_id=input_data.user_id,
+                     event_type="error",
+                     content="No task ID found in delete request"
+                 )
+                 raise HTTPException(status_code=400, detail="No task ID found in text")
+
+        else:
+            action = "no_crud"
+            message = "This input was logged as a conversation but did not trigger an action."
+            log = crud.create_log(
+                db=db,
+                user_id=input_data.user_id,
+                event_type="conversation",
+                content=f"User said: {input_data.text}"
+            )
+
+    except Exception as e:
+        # Global catch to ensure at least one log entry exists
+        if not log:
+            log = crud.create_log(
+                db=db,
+                user_id=input_data.user_id,
+                event_type="error",
+                content=f"Unhandled error: {str(e)}"
+            )
+        raise
 
     return schemas.NLPActOutput(
         intent=intent,
         entities=entities,
-        action=action,
+        action=action or "error",
         task=created_task,
         tasks=retrieved_tasks,
         task_id=deleted_task_id,
