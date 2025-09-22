@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ASTA MVP</title>
+  <!-- TailwindCSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 font-sans leading-normal tracking-normal">
+
+  <!-- Container -->
+  <div class="container mx-auto p-6">
+
+    <!-- Title -->
+    <h1 class="text-3xl font-bold text-center mb-6">ASTA – Task Assistant</h1>
+
+    <!-- Input Section -->
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <label for="userInput" class="block text-gray-700 font-semibold mb-2">
+        Enter Command:
+      </label>
+      <div class="flex">
+        <input
+          id="userInput"
+          type="text"
+          placeholder="e.g., remind me tomorrow at 5 pm to study"
+          class="flex-grow border rounded-l-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        />
+        <button
+          id="sendBtn"
+          class="bg-blue-500 text-white px-6 py-2 rounded-r-lg hover:bg-blue-600"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+
+    <!-- Tasks Section -->
+    <div class="bg-white shadow rounded-lg p-4 mb-6">
+      <h2 class="text-xl font-semibold mb-4">Tasks</h2>
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead>
+          <tr>
+            <th class="px-4 py-2 text-left">ID</th>
+            <th class="px-4 py-2 text-left">Title</th>
+            <th class="px-4 py-2 text-left">Due Date</th>
+            <th class="px-4 py-2 text-left">Action</th>
+          </tr>
+        </thead>
+        <tbody id="tasksTable" class="divide-y divide-gray-100">
+          <!-- Tasks will be injected here -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Logs Section -->
+    <div class="bg-white shadow rounded-lg p-4">
+      <h2 class="text-xl font-semibold mb-4">Last Log</h2>
+      <div id="logOutput" class="text-gray-700 italic">
+        <!-- Log will be injected here -->
+      </div>
+    </div>
+
+  </div>
+
+  <!-- App Script -->
+  <script src="app.js"></script>
+</body>
+</html>
