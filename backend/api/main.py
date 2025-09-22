@@ -1,4 +1,5 @@
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
 from backend.db import crud, session
 from backend.api import schemas
@@ -6,6 +7,15 @@ from backend.nlp import nlp_processor
 from backend.utils.date_utils import parse_due_date
 
 app = FastAPI()
+
+# Allow frontend (running locally) to talk to backend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # for dev: allow all origins, restrict later if needed
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/")
 def root():
