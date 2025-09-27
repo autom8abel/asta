@@ -34,30 +34,35 @@
           Send
         </button>
       </div>
+      <!-- Alert Messages -->
+      <div id="alertBox" class="hidden mt-3 p-3 rounded-lg"></div>
     </div>
 
     <!-- Tasks Section -->
     <div class="bg-white shadow rounded-lg p-4 mb-6">
       <h2 class="text-xl font-semibold mb-4">Tasks</h2>
-      <table class="min-w-full divide-y divide-gray-200">
-        <thead>
-          <tr>
-            <th class="px-4 py-2 text-left">ID</th>
-            <th class="px-4 py-2 text-left">Title</th>
-            <th class="px-4 py-2 text-left">Due Date</th>
-            <th class="px-4 py-2 text-left">Action</th>
-          </tr>
-        </thead>
-        <tbody id="tasksTable" class="divide-y divide-gray-100">
-          <!-- Tasks will be injected here -->
-        </tbody>
-      </table>
+      <div class="overflow-x-auto">
+        <table class="min-w-full text-sm border border-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th class="px-3 py-2 text-left">ID</th>
+              <th class="px-3 py-2 text-left">Title</th>
+              <th class="px-3 py-2 text-left">Due Date</th>
+              <th class="px-3 py-2 text-left">Status</th>
+              <th class="px-3 py-2 text-left">Action</th>
+            </tr>
+          </thead>
+          <tbody id="tasksTable" class="divide-y divide-gray-100">
+            <!-- Tasks will be injected here -->
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Logs Section -->
     <div class="bg-white shadow rounded-lg p-4">
       <h2 class="text-xl font-semibold mb-4">Last Log</h2>
-      <div id="logOutput" class="text-gray-700 italic">
+      <div id="logOutput" class="text-gray-700 italic border-l-4 border-blue-400 pl-3">
         <!-- Log will be injected here -->
       </div>
     </div>

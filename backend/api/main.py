@@ -5,6 +5,7 @@ from backend.db import crud, session
 from backend.api import schemas
 from backend.nlp import nlp_processor
 from backend.utils.date_utils import parse_due_date
+from backend.nlp.utils import clean_title, parse_due_date
 
 app = FastAPI()
 
@@ -46,8 +47,9 @@ def read_users(skip: int = 0, limit: int = 100, db: Session = Depends(session.ge
 # ---------------- Task endpoints ----------------
 @app.post("/tasks/", response_model=schemas.Task)
 def create_task(task: schemas.TaskCreate, db: Session = Depends(session.get_db)):
-    if task.user_id is not None and not crud.get_user(db, task.user_id):
-        raise HTTPException(status_code=404, detail="User not found")
+    # In MVP mode: fallback to single user (ID=1)
+    user_id = task.user_id or 1
+
     db_task = crud.create_task(
         db=db,
         title=task.title,
@@ -56,13 +58,12 @@ def create_task(task: schemas.TaskCreate, db: Session = Depends(session.get_db))
         user_id=task.user_id
     )
     # Automatically log the task creation
-    if task.user_id:
-        crud.create_log(
-            db=db,
-            user_id=task.user_id,
-            event_type="task_created",
-            content=f"Task '{task.title}' created"
-        )
+    crud.create_log(
+        db=db,
+        user_id=task.user_id,
+        event_type="task_created",
+        content=f"Task '{task.title}' created"
+    )
     return db_task
 
 @app.get("/tasks/", response_model=list[schemas.Task])
@@ -71,18 +72,35 @@ def read_tasks(skip: int = 0, limit: int = 10, db: Session = Depends(session.get
 
 @app.get("/users/{user_id}/tasks", response_model=list[schemas.Task])
 def read_user_tasks(user_id: int, skip: int = 0, limit: int = 100, db: Session = Depends(session.get_db)):
-    if not crud.get_user(db, user_id):
-        raise HTTPException(status_code=404, detail="User not found")
-    return crud.get_tasks_for_user(db=db, user_id=user_id, skip=skip, limit=limit)
+    # MVP: ignore user filtering, return all tasks
+    return crud.get_tasks(db=db, skip=skip, limit=limit)
 
+@app.put("/tasks/{task_id}/complete", response_model=schemas.Task)
+def complete_task(task_id: int, db: Session = Depends(session.get_db)):
+    db_task = crud.get_task(db, task_id)
+    if not db_task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    db_task.status = "completed"
+    db.commit()
+    db.refresh(db_task)
+
+    # Log completion
+    crud.create_log(
+        db=db,
+        user_id=1,  # MVP fallback
+        event_type="task_completed",
+        content=f"Task '{db_task.title}' marked complete"
+    )
+
+    return db_task
 
 # ---------------- Log endpoints ----------------
 @app.post("/logs/", response_model=schemas.Log)
 def create_log(log: schemas.LogCreate, db: Session = Depends(session.get_db)):
-    # Ensure user exists before logging
-    if not crud.get_user(db, log.user_id):
-        raise HTTPException(status_code=404, detail="User not found")
-    return crud.create_log(db=db, user_id=log.user_id, event_type=log.event_type, content=log.content)
+    # MVP: default user_id to 1 if not provided
+    user_id = log.iser_id or 1
+    return crud.create_log(db=db, user_id=user_id, event_type=log.event_type, content=log.content)
 
 @app.get("/logs/", response_model=list[schemas.Log])
 def read_logs(skip: int = 0, limit: int = 100, db: Session = Depends(session.get_db)):
@@ -112,9 +130,8 @@ def act_on_text(input_data: schemas.NLPInput, db: Session = Depends(session.get_
     Main NLP endpoint: interprets user input, performs CRUD if needed,
     and always logs the interaction.
     """
-    # Ensure user exists
-    if input_data.user_id and not crud.get_user(db, input_data.user_id):
-        raise HTTPException(status_code=404, detail="User not found")
+    if not input_data.user_id:
+        input_data.user_id = 1
 
     # Run NLP processor
     result = nlp_processor.parse_input(input_data.text)
@@ -130,20 +147,18 @@ def act_on_text(input_data: schemas.NLPInput, db: Session = Depends(session.get_
     # Handle intents
     try:
         if intent == "create_task":
-            # Extract title (remove detected entities + filler words)
-            title = input_data.text
-            for v in entities.values():
-                title = title.replace(v, "")
-            title = title.replace("remind me", "").strip()
+            # Title cleaning
+            title = clean_title(input_data.text, entities)
 
-            # Parse due_date using dateparser
-            due_date = parse_due_date(entities)
+            # Date parsing
+            due_date, all_day = parse_due_date(entities)
 
             created_task = crud.create_task(
                 db=db,
                 title=title or "Untitled Task",
                 description=None,
-                due_date=due_date,  # now stores datetime if available
+                due_date=due_date,
+                all_day=all_day,
                 user_id=input_data.user_id
             )
             action = "task_created"
@@ -205,6 +220,41 @@ def act_on_text(input_data: schemas.NLPInput, db: Session = Depends(session.get_
                      content="No task ID found in delete request"
                  )
                  raise HTTPException(status_code=400, detail="No task ID found in text")
+
+        elif intent == "complete_task":
+            task_id_str = entities.get("TASK_ID")
+            if task_id_str:
+                task_id = int(task_id_str)
+                db_task = crud.get_task(db=db, task_id=task_id)
+                if db_task:
+                    db_task.status = "completed"
+                    db.commit()
+                    db.refresh(db_task)
+
+                    action = "task_completed"
+
+                    log = crud.create_log(
+                        db=db,
+                        user_id=input_data.user_id or 1,
+                        event_type="task_completed",
+                        content=f"Task '{db_task.title}' marked complete"
+                    )
+                else:
+                    log = crud.create_log(
+                        db=db,
+                        user_id=input_data.user_id or 1,
+                        event_type="error",
+                        content=f"Attempted to complete non-existent task ID {task_id}"
+                    )
+                    raise HTTPException(status_code=404, detail="Task not found")
+            else:
+                log = crud.create_log(
+                    db=db,
+                    user_id=input_data.user_id or 1,
+                    event_type="error",
+                    content="No task ID found in complete request"
+                )
+                raise HTTPException(status_code=400, detail="No task ID found in text")
 
         else:
             action = "no_crud"
